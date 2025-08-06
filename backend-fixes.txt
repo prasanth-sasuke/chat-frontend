@@ -1,0 +1,236 @@
+BACKEND SOCKET.IO FIXES
+========================
+
+ISSUE 1: Missing receiverId validation in one-to-one messages
+------------------------------------------------------------
+PROBLEM: The validateMessageData function doesn't check for receiverId, but it's required for one-to-one messages.
+
+FIX: Update the validateMessageData function (around line 15):
+
+const validateMessageData = (data: any) => {
+  const { senderId, receiverId, workspaceId, content, messageType, fileInfo } = data;
+  
+  if (!senderId || !receiverId || !workspaceId || !content) {
+    throw new Error("Missing required fields: senderId, receiverId, workspaceId, content");
+  }
+  
+  if (content.trim().length === 0) {
+    throw new Error("Message content cannot be empty");
+  }
+  
+  if (content.length > 10000) {
+    throw new Error("Message content too long (max 10000 characters)");
+  }
+  
+  if (messageType && !["text", "image", "file", "emoji", "media_group"].includes(messageType)) {
+    throw new Error("Invalid message type");
+  }
+  
+  return true;
+};
+
+ISSUE 2: Missing API endpoint for getting messages
+--------------------------------------------------
+PROBLEM: Frontend is calling /chat/message endpoint but it doesn't exist in your backend.
+
+ADD THIS NEW API ENDPOINT (create new file or add to existing routes):
+
+// GET /chat/message - Get messages for one-to-one or channel
+app.get('/chat/message', async (req, res) => {
+  try {
+    const { senderId, receiverId, channelId, page = 1, limit = 50 } = req.query;
+    const token = req.headers.authorization?.split(" ")[1];
+    
+    if (!token) {
+      return res.status(401).json({ success: false, message: "No token provided" });
+    }
+    
+    const decoded = jwt.verify(token, process.env.JWT_SECRET!);
+    
+    if (!senderId) {
+      return res.status(400).json({ success: false, message: "senderId is required" });
+    }
+    
+    let messages = [];
+    
+    if (receiverId) {
+      // One-to-one messages
+      const conversation = await conversationModel.findOne({
+        participants: { $all: [senderId, receiverId] },
+        conversationType: "one-to-one"
+      });
+      
+      if (conversation) {
+        messages = await messageModel.find({
+          conversationId: conversation._id
+        })
+        .sort({ createdAt: -1 })
+        .limit(parseInt(limit))
+        .skip((parseInt(page) - 1) * parseInt(limit));
+      }
+    } else if (channelId) {
+      // Channel messages
+      const conversation = await conversationModel.findOne({
+        channelId,
+        conversationType: "channel"
+      });
+      
+      if (conversation) {
+        messages = await messageModel.find({
+          conversationId: conversation._id
+        })
+        .sort({ createdAt: -1 })
+        .limit(parseInt(limit))
+        .skip((parseInt(page) - 1) * parseInt(limit));
+      }
+    }
+    
+    res.json({
+      success: true,
+      result: {
+        messages: messages.reverse() // Show oldest first
+      }
+    });
+    
+  } catch (error) {
+    console.error('Get messages error:', error);
+    res.status(500).json({ success: false, message: "Error fetching messages" });
+  }
+});
+
+ISSUE 3: Message model needs sender information
+-----------------------------------------------
+PROBLEM: Messages don't include sender name, causing "Unknown User" issue.
+
+FIX: Update the message creation to include sender information (around line 280):
+
+const message = await messageModel.create({
+  content,
+  senderId,
+  receiverId,
+  workspaceId,
+  conversationId,
+  messageType,
+  mediaFiles,
+  senderName: socket.data.user?.name || 'Unknown', // ADD THIS
+  senderEmail: socket.data.user?.email || '' // ADD THIS
+});
+
+AND for channel messages (around line 380):
+
+const message = await messageModel.create({
+  content,
+  senderId,
+  channelId,
+  workspaceId,
+  conversationId,
+  messageType,
+  mediaFiles,
+  senderName: socket.data.user?.name || 'Unknown', // ADD THIS
+  senderEmail: socket.data.user?.email || '' // ADD THIS
+});
+
+ISSUE 4: Socket authentication needs user details
+-------------------------------------------------
+PROBLEM: Socket authentication only stores basic user info, not full user details.
+
+FIX: Update the socket authentication middleware (around line 85):
+
+io.use(async (socket: Socket, next) => {
+  try {
+    const token =
+      socket.handshake.auth.token ||
+      socket.handshake.headers.authorization?.split(" ")[1];
+
+    if (token) {
+      const decoded = jwt.verify(token, process.env.JWT_SECRET!) as SocketUser;
+      
+      // Get full user details from database
+      const user = await UserModel.findById(decoded.id);
+      
+      socket.data.user = {
+        ...decoded,
+        name: user?.name || 'Unknown',
+        email: user?.email || '',
+        avatar: user?.avatar || ''
+      };
+      socket.data.isAuthenticated = true;
+    } else {
+      socket.data.user = { id: null, company_id: null, role: "guest" };
+      socket.data.isAuthenticated = false;
+    }
+    return next();
+  } catch (error: any) {
+    console.error(`❌ Socket authentication failed: ${error.message}`);
+    socket.data.user = { id: null, company_id: null, role: "guest" };
+    socket.data.isAuthenticated = false;
+    return next();
+  }
+});
+
+ISSUE 5: Online status not working properly
+-------------------------------------------
+PROBLEM: Online status events might not be reaching all clients.
+
+FIX: Update the connection handling (around line 110):
+
+if (userId) {
+  if (!connectedUsers.has(userId)) {
+    connectedUsers.set(userId, new Set());
+  }
+  const userSockets = connectedUsers.get(userId)!;
+  userSockets.add(socket.id);
+
+  // First connection → broadcast online
+  if (userSockets.size === 1) {
+    io.emit("user-online", { userId });
+    console.log(`👤 User ${userId} is online`);
+  }
+
+  // Send list of online users to the new connection
+  const onlineUsers = Array.from(connectedUsers.keys());
+  socket.emit("online-users", { users: onlineUsers });
+  
+  // Also broadcast to all other clients that a new user joined
+  socket.broadcast.emit("online-users", { users: onlineUsers });
+}
+
+ISSUE 6: Message model schema needs updating
+--------------------------------------------
+PROBLEM: Message model might not have senderName and senderEmail fields.
+
+ADD THESE FIELDS TO YOUR MESSAGE MODEL SCHEMA:
+
+const messageSchema = new mongoose.Schema({
+  content: { type: String, required: true },
+  senderId: { type: String, required: true },
+  receiverId: { type: String }, // for one-to-one
+  channelId: { type: String }, // for channels
+  workspaceId: { type: String, required: true },
+  conversationId: { type: String, required: true },
+  messageType: { type: String, default: 'text' },
+  mediaFiles: [{ type: Object }],
+  senderName: { type: String }, // ADD THIS
+  senderEmail: { type: String }, // ADD THIS
+  readBy: [{ userId: String, readAt: Date }],
+  createdAt: { type: Date, default: Date.now },
+  updatedAt: { type: Date, default: Date.now }
+});
+
+SUMMARY OF CHANGES NEEDED:
+=========================
+1. Add receiverId validation to validateMessageData function
+2. Create new GET /chat/message API endpoint
+3. Add senderName and senderEmail to message creation
+4. Update socket authentication to include full user details
+5. Fix online status broadcasting
+6. Update message model schema
+
+TESTING:
+========
+After making these changes:
+1. Restart your backend server
+2. Test one-to-one messaging between two users
+3. Check browser console for any remaining errors
+4. Verify sender names appear correctly
+5. Verify online status updates work 
