@@ -1,0 +1,85 @@
+include: package:flutter_lints/flutter.yaml
+
+linter:
+  rules:
+    # Prefer const constructors
+    prefer_const_constructors: true
+    prefer_const_literals_to_create_immutables: true
+    
+    # Prefer const declarations
+    prefer_const_declarations: true
+    
+    # Prefer final for variables that aren't reassigned
+    prefer_final_fields: true
+    prefer_final_locals: true
+    
+    # Avoid unnecessary containers
+    avoid_unnecessary_containers: true
+    
+    # Prefer sized box over container
+    sized_box_for_whitespace: true
+    
+    # Prefer const over final for compile-time constants
+    prefer_const_constructors_in_immutables: true
+    
+    # Avoid empty catch blocks
+    avoid_empty_else: true
+    
+    # Prefer single quotes
+    prefer_single_quotes: true
+    
+    # Avoid unnecessary null checks
+    avoid_unnecessary_null_checks: true
+    
+    # Prefer if null operators
+    prefer_if_null_operators: true
+    
+    # Prefer null-aware operators
+    prefer_null_aware_operators: true
+    
+    # Avoid unnecessary null-aware operators
+    avoid_unnecessary_null_aware_operators: true
+    
+    # Prefer collection if
+    prefer_collection_literals: true
+    
+    # Prefer spread collections
+    prefer_spread_collections: true
+    
+    # Avoid unnecessary new
+    avoid_unnecessary_new: true
+    
+    # Prefer relative imports
+    prefer_relative_imports: true
+    
+    # Avoid unused imports
+    avoid_unused_imports: true
+    
+    # Prefer async/await
+    prefer_async_await: true
+    
+    # Avoid async void
+    avoid_async_void: true
+    
+    # Prefer await over then
+    prefer_await_over_then: true
+    
+    # Avoid print statements
+    avoid_print: true
+    
+    # Prefer debugPrint over print
+    prefer_debug_print: true
+
+analyzer:
+  exclude:
+    - "**/*.g.dart"
+    - "**/*.freezed.dart"
+  errors:
+    # Treat missing required parameters as a warning (not a hint)
+    missing_required_param: warning
+    # Treat missing returns as a warning (not a hint)
+    missing_return: warning
+    # Allow having TODOs in the code
+    todo: ignore
+    # Allow having unused code
+    unused_code: ignore
