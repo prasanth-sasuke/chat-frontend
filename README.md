@@ -1,5 +1,9 @@
 # Real-Time Chat Application
 
+cd /c/Users/DreamsTechnologies/Downloads/chat-frontend-main/flutter_chat_app
+flutter pub get
+flutter run -d chrome --web-port=8082
+
 A modern real-time chat application built with React, featuring both one-to-one and group chat capabilities.
 
 ## Features
